@@ -280,98 +280,110 @@ for ii = 1:numel(children)
         referenceObjectExist = piAssetFind(obj,'name',strcat(thisNode.referenceObject,'_B'));
     end
 
-    fprintf(fid, [spacing, 'AttributeBegin\n']);
-
     if isequal(thisNode.type, 'branch')
-        % Get the name after stripping ID for this Node
-        while numel(thisNode.name) >= 10 &&...
-                isequal(thisNode.name(7:8), 'ID')
-            thisNode.name = thisNode.name(10:end);
-        end
+        % AJ: Write an attribute block only if thisNode is a branch
+        fprintf(fid, [spacing, 'AttributeBegin\n']);
 
-        % Write the object's dimensions
-        fprintf(fid, [spacing, indentSpacing,...
-            sprintf('#MeshName: "%s" #Dimension:[%.4f %.4f %.4f]',thisNode.name,...
-            thisNode.size.l,...
-            thisNode.size.w,...
-            thisNode.size.h), '\n']);
-
-        % Needs neatening.  At least get the CoordSys thing after the
-        % attributeBegin.
-        thisNodeChildId = obj.getchildren(children(ii));
-        if ~isempty(thisNodeChildId)
-            % If there are children, it's a branch.
-            thisNodeChild = obj.get(thisNodeChildId);
-
-            % If it is a branch with a light below it, check about the
-            % coordinate system.
-            if strcmp(thisNodeChild.type, 'light') && ...
-                    strcmp(thisNodeChild.lght{1}.type,'area')
-                % This is nuts and should go away
-            elseif strcmp(thisNodeChild.type, 'light') && ...
-                    isfield(thisNodeChild.lght{1},'cameracoordinate') && ...
-                    thisNodeChild.lght{1}.cameracoordinate
-                fprintf(fid, [spacing, indentSpacing, 'CoordSysTransform "camera" \n']);
+        % AJ: for a leaf node i, its parent node's index will i-1
+        % We're currently iterating over children() 
+        % If the child of thisNode / children(ii) is a leaf, 
+        % we don't want to write #MeshName and transforms
+        childNode = obj.get(children(ii) + 1);
+        if ~isequal(childNode.type, 'object')
+            % Get the name after stripping ID for this Node
+            while numel(thisNode.name) >= 10 &&...
+                    isequal(thisNode.name(7:8), 'ID')
+                thisNode.name = thisNode.name(10:end);
             end
-        end
-
-        % If a motion exists in the current object, prepare to write it out by
-        % having an additional line below.  For now, this is not
-        % functional.
-        if ~isempty(thisNode.motion)
-            fprintf(fid, strcat(spacing, indentSpacing,...
-                'ActiveTransform StartTime \n'));
-        end
-
-        % Transformation section
-
-        % If this branch has a single child that is a light, then we
-        % should figure out if the light has cameracoordinate true.
-        % If it does, we should write that into the file prior to to
-        % the concat transform in
-        %s
-        if ~isempty(thisNode.rotation)
-            piGeometryTransformWrite(fid, thisNode, spacing, indentSpacing);
-        end
-
-        % Motion section
-        if ~isempty(thisNode.motion)
-            fprintf(fid, strcat(spacing, indentSpacing,...
-                'ActiveTransform EndTime \n'));
-            for jj = 1:size(thisNode.translation, 2)
-                if isfield(thisNode.motion, 'translation')
-                    if ~isempty(thisNode.motion.translation(jj, :))
-                        pos = thisNode.motion.translation(jj,:);
+    
+            % Write the object's dimensions
+            fprintf(fid, [spacing, indentSpacing,...
+                sprintf('#MeshName: "%s" #Dimension:[%.4f %.4f %.4f]',thisNode.name,...
+                thisNode.size.l,...
+                thisNode.size.w,...
+                thisNode.size.h), '\n']);
+    
+            % Needs neatening.  At least get the CoordSys thing after the
+            % attributeBegin.
+            thisNodeChildId = obj.getchildren(children(ii));
+            if ~isempty(thisNodeChildId)
+                % If there are children, it's a branch.
+                thisNodeChild = obj.get(thisNodeChildId);
+    
+                % If it is a branch with a light below it, check about the
+                % coordinate system.
+                if strcmp(thisNodeChild.type, 'light') && ...
+                        strcmp(thisNodeChild.lght{1}.type,'area')
+                    % This is nuts and should go away
+                elseif strcmp(thisNodeChild.type, 'light') && ...
+                        isfield(thisNodeChild.lght{1},'cameracoordinate') && ...
+                        thisNodeChild.lght{1}.cameracoordinate
+                    fprintf(fid, [spacing, indentSpacing, 'CoordSysTransform "camera" \n']);
+                end
+            end
+    
+            % If a motion exists in the current object, prepare to write it out by
+            % having an additional line below.  For now, this is not
+            % functional.
+            if ~isempty(thisNode.motion)
+                fprintf(fid, strcat(spacing, indentSpacing,...
+                    'ActiveTransform StartTime \n'));
+            end
+    
+            % Transformation section
+    
+            % If this branch has a single child that is a light, then we
+            % should figure out if the light has cameracoordinate true.
+            % If it does, we should write that into the file prior to to
+            % the concat transform in
+            %s
+            if ~isempty(thisNode.rotation)
+                piGeometryTransformWrite(fid, thisNode, spacing, indentSpacing);
+            end
+    
+            % Motion section
+            if ~isempty(thisNode.motion)
+                fprintf(fid, strcat(spacing, indentSpacing,...
+                    'ActiveTransform EndTime \n'));
+                for jj = 1:size(thisNode.translation, 2)
+                    if isfield(thisNode.motion, 'translation')
+                        if ~isempty(thisNode.motion.translation(jj, :))
+                            pos = thisNode.motion.translation(jj,:);
+                            fprintf(fid, strcat(spacing, indentSpacing,...
+                                sprintf('Translate %f %f %f', pos(1),...
+                                pos(2),...
+                                pos(3)), '\n'));
+                        end
+                    end
+    
+                    if isfield(thisNode.motion, 'rotation') &&...
+                            ~isempty(thisNode.motion.rotation)
+                        rot = thisNode.motion.rotation;
+                        % Write out rotation
                         fprintf(fid, strcat(spacing, indentSpacing,...
-                            sprintf('Translate %f %f %f', pos(1),...
-                            pos(2),...
-                            pos(3)), '\n'));
+                            sprintf('Rotate %f %f %f %f',rot(:,3-2)), '\n')); % Z
+                        fprintf(fid, strcat(spacing, indentSpacing,...
+                            sprintf('Rotate %f %f %f %f',rot(:,3-1)),'\n')); % Y
+                        fprintf(fid, strcat(spacing, indentSpacing,...
+                            sprintf('Rotate %f %f %f %f',rot(:,3)), '\n'));   % X
                     end
                 end
-
-                if isfield(thisNode.motion, 'rotation') &&...
-                        ~isempty(thisNode.motion.rotation)
-                    rot = thisNode.motion.rotation;
-                    % Write out rotation
-                    fprintf(fid, strcat(spacing, indentSpacing,...
-                        sprintf('Rotate %f %f %f %f',rot(:,3-2)), '\n')); % Z
-                    fprintf(fid, strcat(spacing, indentSpacing,...
-                        sprintf('Rotate %f %f %f %f',rot(:,3-1)),'\n')); % Y
-                    fprintf(fid, strcat(spacing, indentSpacing,...
-                        sprintf('Rotate %f %f %f %f',rot(:,3)), '\n'));   % X
-                end
             end
-        end
-
-        % % Reference object section (also if an instance (object copy))
-        % if ~isempty(referenceObjectExist) && isfield(thisNode,'referenceObject')
-        %     fprintf(fid, strcat(spacing, indentSpacing, ...
-        %         sprintf('ObjectInstance "%s"', thisNode.referenceObject), '\n'));
-        % end
+    
+            % % Reference object section (also if an instance (object copy))
+            % if ~isempty(referenceObjectExist) && isfield(thisNode,'referenceObject')
+            %     fprintf(fid, strcat(spacing, indentSpacing, ...
+            %         sprintf('ObjectInstance "%s"', thisNode.referenceObject), '\n'));
+            % end
+        ggend 
 
         % (fid, obj, thisNode, lvl, outFilePath, writeGeometryFlag, thisR)
         recursiveWriteAttributes(fid, obj, children(ii), lvl + 1, ...
             outFilePath, writeGeometryFlag, thisR);
+
+        % AJ: Moved it inside the branch block
+        % Idea: Attribute blocks should only be around branch nodes
+        fprintf(fid, [spacing, 'AttributeEnd\n']);
 
     elseif isequal(thisNode.type, 'object') || isequal(thisNode.type, 'instance')
         while numel(thisNode.name) >= 10 &&...
@@ -419,7 +431,6 @@ for ii = 1:numel(children)
         warning('Unknown node type %s\n',thisNode.type);
     end
 
-    fprintf(fid, [spacing, 'AttributeEnd\n']);
 end
 
 end
@@ -464,13 +475,14 @@ tMatrix = reshape(tMatrix,[1,16]);
 % Or at least, they are different when I do not write out the
 % identity.
 %
-if tMatrix(:) == identityTransform(:)
-    % Do not bother writing out identity transforms?
-    %
-    % If a complex scene fails and this message has appeared, tell BW.
-    % disp('piGeometryWrite: skipping identity transform.')
-    return;
-else
+% AJ: lets try writing the identity transforms too
+% if tMatrix(:) == identityTransform(:)
+%     % Do not bother writing out identity transforms?
+%     %
+%     % If a complex scene fails and this message has appeared, tell BW.
+%     % disp('piGeometryWrite: skipping identity transform.')
+%     return;
+% else
     transformType = 'ConcatTransform';
 
     % A 4x4 affine transformation used is in graphics to combine rotation and
@@ -481,7 +493,7 @@ else
         transformType, tMatrix(:));
     fullLine = [spacing indentSpacing printString '\n'];
     fprintf(fid, fullLine);
-end
+% end
 
 end
 
